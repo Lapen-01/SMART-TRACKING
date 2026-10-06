@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Lacak status pengiriman, posisi barang, kendaraan, dan kurir berdasarkan nomor DO / resi.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e2550f'/%3E%3Cpath d='M6 11h12v9H6zM18 14h5l3 3v3h-8z' fill='white'/%3E%3Ccircle cx='10' cy='22' r='2.5' fill='white'/%3E%3Ccircle cx='22' cy='22' r='2.5' fill='white'/%3E%3C/svg%3E">
+<title>Lacak DO Pengiriman</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: search bar on top, then a two-column board (status + map | courier + timeline), stacking to one column on phones */
+:root{
+  --bg:#f3f4f1; --surface:#ffffff; --line:#dfe2db; --ink:#1b2420; --muted:#5f6b64;
+  --accent:#e2550f; --accent-soft:#fde9de; --route:#1f6f5c; --route-soft:#d6ebe4;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#b7791f; --warn-soft:#fbefd6; --info:#2563a8; --info-soft:#dde9f7;
+  --plate-bg:#151515; --plate-fg:#f4f4f4; --map-bg:#eef1ec; --grid:#dde3dc;
+  --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121614; --surface:#1a201d; --line:#2c3531; --ink:#e6ebe7; --muted:#97a39c;
+  --accent:#ff7a3d; --accent-soft:#3a2216; --route:#4fbf9f; --route-soft:#1d3a32;
+  --ok:#4cc77f; --ok-soft:#173826; --warn:#e2a64a; --warn-soft:#3a2d15; --info:#6aa8ea; --info-soft:#18293d;
+  --plate-bg:#050505; --plate-fg:#f4f4f4; --map-bg:#161c19; --grid:#252d29; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --surface:#1a201d; --line:#2c3531; --ink:#e6ebe7; --muted:#97a39c;
+  --accent:#ff7a3d; --accent-soft:#3a2216; --route:#4fbf9f; --route-soft:#1d3a32;
+  --ok:#4cc77f; --ok-soft:#173826; --warn:#e2a64a; --warn-soft:#3a2d15; --info:#6aa8ea; --info-soft:#18293d;
+  --plate-bg:#050505; --plate-fg:#f4f4f4; --map-bg:#161c19; --grid:#252d29; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{-webkit-text-size-adjust:100%;background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body)}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:20px 48px;display:grid;gap:18px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.brand h1{font:800 clamp(26px,4vw,36px)/1.05 var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+.brand p{margin:4px 0 0;color:var(--muted)}
+.live{font:500 12px var(--f-mono);color:var(--muted);display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 var(--ok);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
+
+.search{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:10px}
+.search form{display:flex;gap:10px;flex-wrap:wrap}
+.search label{font:600 12px var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.search input{flex:1 1 260px;min-width:0;font:700 18px var(--f-mono);letter-spacing:.04em;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);text-transform:uppercase}
+.search input:focus{outline:none;border-color:var(--accent)}
+.btn{font:600 15px var(--f-body);padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+.btn:hover{filter:brightness(1.07)}
+.btn:focus-visible,.chip:focus-visible{outline:3px solid var(--route);outline-offset:2px}
+.samples{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+.chip{font:500 12px var(--f-mono);padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+.err{color:var(--accent);font-size:14px;margin:0}
+
+.board{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.board{grid-template-columns:minmax(0,1fr)}}
+.col{display:grid;gap:18px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:0}
+.panel h2{font:600 12px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+
+.status-head{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start}
+.do-no{font:700 13px var(--f-mono);color:var(--muted)}
+.status-title{font:800 clamp(22px,3.2vw,30px)/1.1 var(--f-display);margin:4px 0 6px;text-wrap:balance}
+.status-sub{margin:0;color:var(--muted)}
+.pill{font:600 12px var(--f-body);padding:5px 12px;border-radius:999px;white-space:nowrap;letter-spacing:.02em}
+.s-proses{background:var(--warn-soft);color:var(--warn)}
+.s-transit{background:var(--info-soft);color:var(--info)}
+.s-kurir{background:var(--accent-soft);color:var(--accent)}
+.s-done{background:var(--ok-soft);color:var(--ok)}
+
+.steps{display:grid;grid-template-columns:repeat(5,1fr);margin:20px 0 4px;position:relative}
+.step{display:grid;justify-items:center;gap:6px;text-align:center;font-size:12px;color:var(--muted);position:relative}
+.step::before{content:"";position:absolute;top:13px;left:-50%;width:100%;height:3px;background:var(--line);z-index:0}
+.step:first-child::before{display:none}
+.step.on::before{background:var(--route)}
+.step i{width:28px;height:28px;border-radius:50%;border:3px solid var(--line);background:var(--surface);z-index:1;display:grid;place-items:center;font:700 12px var(--f-mono);font-style:normal}
+.step.on i{border-color:var(--route);background:var(--route);color:#fff}
+.step.cur i{border-color:var(--accent);background:var(--accent);color:#fff;box-shadow:0 0 0 5px var(--accent-soft)}
+.step.on,.step.cur{color:var(--ink);font-weight:500}
+
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 18px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--line)}
+.fact span{display:block;font-size:12px;color:var(--muted)}
+.fact b{font-weight:600}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+.map-wrap{border-radius:10px;overflow:hidden;background:var(--map-bg);border:1px solid var(--line)}
+.map-wrap svg{display:block;width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:6px}
+.lg{width:12px;height:12px;border-radius:3px;display:inline-block}
+.pos-line{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px}
+
+.courier{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:center}
+.avatar{width:56px;height:56px;border-radius:12px;background:var(--route-soft);color:var(--route);display:grid;place-items:center;font:800 20px var(--f-display)}
+.courier h3{margin:0;font:700 18px var(--f-display)}
+.courier p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.plate{display:inline-flex;flex-direction:column;align-items:center;background:var(--plate-bg);color:var(--plate-fg);border:2px solid var(--plate-fg);outline:2px solid var(--plate-bg);border-radius:6px;padding:6px 14px 3px;font:700 22px/1 var(--f-mono);letter-spacing:.06em}
+.plate small{font-size:9px;letter-spacing:.1em;margin-top:4px;opacity:.8;border-top:1px solid currentColor;padding-top:2px}
+.kv{display:grid;grid-template-columns:minmax(110px,auto) minmax(0,1fr);gap:8px 14px;margin-top:16px;font-size:14px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-weight:500;overflow-wrap:anywhere}
+.phone{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.copy{font:500 12px var(--f-body);padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+.vehicle-row{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:16px;padding-top:16px;border-top:1px dashed var(--line)}
+.empty{color:var(--muted);font-size:14px;margin:0}
+
+.tl{list-style:none;margin:0;padding:0;display:grid}
+.tl li{display:grid;grid-template-columns:86px 18px minmax(0,1fr);gap:10px;position:relative;padding-bottom:16px}
+.tl li:last-child{padding-bottom:0}
+.tl time{font:500 12px/1.4 var(--f-mono);color:var(--muted);text-align:right}
+.tl .bul{width:12px;height:12px;border-radius:50%;background:var(--line);margin:4px auto 0;position:relative;z-index:1}
+.tl li::after{content:"";position:absolute;left:104px;top:18px;bottom:0;width:2px;background:var(--line)}
+.tl li:last-child::after{display:none}
+.tl li:first-child .bul{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.tl strong{display:block;font-weight:600}
+.tl .loc{font-size:13px;color:var(--muted)}
+.tl li:first-child strong{color:var(--accent)}
+.note{font-size:12px;color:var(--muted);margin:0}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Lacak Pengiriman</h1>
+      <p>Masukkan nomor DO / resi untuk melihat status, posisi barang, dan kurir.</p>
+    </div>
+    <div class="live"><span class="dot"></span><span id="clock">Live</span></div>
+  </header>
+
+  <section class="search" aria-label="Cari nomor DO">
+    <label for="doInput">Nomor DO / Resi</label>
+    <form id="f">
+      <input id="doInput" autocomplete="off" placeholder="Contoh: DO-2610-00187" value="DO-2610-00187">
+      <button class="btn" type="submit">Lacak</button>
+    </form>
+    <div class="samples">Contoh data: <span id="chips" style="display:flex;flex-wrap:wrap;gap:8px"></span></div>
+    <p class="err" id="err" hidden></p>
+  </section>
+
+  <div class="board" id="board">
+    <div class="col">
+      <section class="panel" id="statusPanel"></section>
+      <section class="panel">
+        <h2>Posisi Barang &amp; Kendaraan</h2>
+        <div class="map-wrap"><svg id="map" viewBox="0 0 720 360" role="img" aria-label="Peta rute pengiriman"></svg></div>
+        <div class="legend">
+          <span><i class="lg" style="background:var(--route)"></i>Rute ditempuh</span>
+          <span><i class="lg" style="background:var(--grid);border:1px dashed var(--muted)"></i>Rute berikutnya</span>
+          <span><i class="lg" style="background:var(--accent);border-radius:50%"></i>Posisi kendaraan / barang</span>
+        </div>
+        <div class="pos-line" id="posLine"></div>
+      </section>
+    </div>
+    <div class="col">
+      <section class="panel" id="courierPanel"></section>
+      <section class="panel">
+        <h2>Riwayat Perjalanan</h2>
+        <ol class="tl" id="timeline"></ol>
+      </section>
+    </div>
+  </div>
+  <p class="note">Data di halaman ini adalah contoh. Posisi kendaraan disimulasikan bergerak setiap 3 detik, menggantikan data GPS asli.</p>
+</div>
+
+<script>
+/* ===== Master lokasi: HUB & Warehouse ===== */
+const LOC = {
+  WHS_CKR:{code:"WHS-CKR",name:"Warehouse Cikarang",city:"Bekasi",lat:-6.30,lng:107.15},
+  HUB_JKT:{code:"HUB-JKT",name:"HUB Jakarta Timur",city:"Jakarta",lat:-6.22,lng:106.90},
+  HUB_CRB:{code:"HUB-CRB",name:"HUB Cirebon",city:"Cirebon",lat:-6.73,lng:108.55},
+  HUB_BDG:{code:"HUB-BDG",name:"HUB Bandung",city:"Bandung",lat:-6.93,lng:107.62},
+  HUB_SMG:{code:"HUB-SMG",name:"HUB Semarang",city:"Semarang",lat:-6.98,lng:110.41},
+  HUB_SBY:{code:"HUB-SBY",name:"HUB Surabaya",city:"Surabaya",lat:-7.27,lng:112.74},
+  HUB_SOL:{code:"HUB-SOL",name:"HUB Solo",city:"Surakarta",lat:-7.57,lng:110.82},
+};
+
+/* ===== Data DO contoh ===== */
+const STEPS=["Diproses","Di Gudang/HUB","Dalam Perjalanan","Diantar Kurir","Terkirim"];
+const DATA = {
+  "DO-2610-00187":{
+    stage:3, pill:["Diantar Kurir","s-kurir"],
+    title:"Barang sedang diantar kurir ke alamat tujuan",
+    sender:"PT Sinar Teknik Mandiri, Cikarang", receiver:"CV Bangun Karya – Jl. Soekarno Hatta No. 412, Bandung",
+    item:"Spare part hydraulic pump (2 koli)", weight:"86 kg", service:"Reguler Darat", eta:"07 Okt 2026, 16:00",
+    route:["WHS_CKR","HUB_JKT","HUB_BDG"], dest:{name:"Alamat penerima",lat:-6.95,lng:107.66}, legDone:2, live:true, progress:.35,
+    courier:{name:"Rudi Hartono",id:"KRR-BDG-0417",phone:"0812-2245-7781",hub:"HUB Bandung",join:"Mar 2022",
+      vehicle:"Mobil Box (Grand Max)",fleet:"BOX-BDG-07",plate:"D 8124 TK",exp:"04·29"},
+    events:[
+      ["07 Okt 09:42","Barang dibawa kurir menuju alamat penerima","HUB Bandung"],
+      ["07 Okt 08:10","Barang tiba dan disortir di HUB","HUB Bandung"],
+      ["06 Okt 22:35","Berangkat dari HUB menuju Bandung (linehaul)","HUB Jakarta Timur"],
+      ["06 Okt 18:20","Barang tiba di HUB","HUB Jakarta Timur"],
+      ["06 Okt 14:05","Barang diserahkan ke ekspedisi","Warehouse Cikarang"],
+      ["06 Okt 10:30","DO dibuat, barang sedang dipacking","Warehouse Cikarang"]]
+  },
+  "DO-2610-00214":{
+    stage:2, pill:["In Transit","s-transit"],
+    title:"In Transit, saat ini di HUB Semarang",
+    sender:"PT Sinar Teknik Mandiri, Cikarang", receiver:"PT Jaya Konstruksi – Kawasan Industri Rungkut, Surabaya",
+    item:"Filter kit & seal set (5 koli)", weight:"42 kg", service:"Express Darat", eta:"08 Okt 2026",
+    route:["WHS_CKR","HUB_JKT","HUB_CRB","HUB_SMG","HUB_SBY"], dest:null, legDone:3, live:false,
+    courier:null,
+    linehaul:{name:"Agus Prasetyo",id:"DRV-LH-0093",phone:"0813-9001-2264",hub:"Linehaul Jawa",join:"Jan 2020",
+      vehicle:"Truk Fuso (CDD)",fleet:"LH-TRK-22",plate:"B 9561 UXT",exp:"11·27", note:"Truk dijadwalkan berangkat ke HUB Surabaya pukul 13:00"},
+    events:[
+      ["07 Okt 06:15","Barang tiba di HUB, menunggu linehaul berikutnya","HUB Semarang"],
+      ["06 Okt 23:40","Transit di HUB","HUB Cirebon"],
+      ["06 Okt 17:55","Berangkat dari HUB","HUB Jakarta Timur"],
+      ["06 Okt 15:10","Barang tiba di HUB","HUB Jakarta Timur"],
+      ["06 Okt 11:00","DO dibuat, barang diserahkan ke ekspedisi","Warehouse Cikarang"]]
+  },
+  "DO-2610-00305":{
+    stage:0, pill:["On Proses","s-proses"],
+    title:"Pesanan sedang diproses di gudang",
+    sender:"PT Sinar Teknik Mandiri, Cikarang", receiver:"PT Tambang Lestari – Jl. Adi Sucipto, Solo",
+    item:"Undercarriage track roller (1 palet)", weight:"310 kg", service:"Kargo", eta:"10 Okt 2026",
+    route:["WHS_CKR","HUB_JKT","HUB_SMG","HUB_SOL"], dest:null, legDone:0, live:false, courier:null,
+    events:[
+      ["07 Okt 08:30","Barang sedang dipacking dan menunggu pickup","Warehouse Cikarang"],
+      ["07 Okt 08:02","DO dibuat","Warehouse Cikarang"]]
+  },
+  "DO-2610-00122":{
+    stage:4, pill:["Terkirim","s-done"],
+    title:"Barang sudah diterima",
+    sender:"PT Sinar Teknik Mandiri, Cikarang", receiver:"UD Mitra Alat – Jl. Kartini No. 8, Cirebon",
+    item:"Bucket teeth set (3 koli)", weight:"55 kg", service:"Reguler Darat", eta:"Diterima 05 Okt 2026, 14:22",
+    route:["WHS_CKR","HUB_JKT","HUB_CRB"], dest:{name:"Alamat penerima",lat:-6.71,lng:108.57}, legDone:3, live:false, progress:1,
+    receivedBy:"Bpk. Darmawan (pemilik)",
+    courier:{name:"Siti Nurhaliza",id:"KRR-CRB-0128",phone:"0857-2213-4490",hub:"HUB Cirebon",join:"Agu 2023",
+      vehicle:"Motor (Honda Beat)",fleet:"MTR-CRB-12",plate:"E 4471 PL",exp:"08·28"},
+    events:[
+      ["05 Okt 14:22","Barang diterima oleh Bpk. Darmawan","Cirebon"],
+      ["05 Okt 11:05","Barang dibawa kurir menuju alamat penerima","HUB Cirebon"],
+      ["05 Okt 06:40","Barang tiba di HUB","HUB Cirebon"],
+      ["04 Okt 21:15","Berangkat dari HUB","HUB Jakarta Timur"],
+      ["04 Okt 13:30","DO dibuat, barang diserahkan ke ekspedisi","Warehouse Cikarang"]]
+  }
+};
+
+/* ===== Helpers ===== */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const B={lng0:106.4,lng1:113.2,lat0:-5.75,lat1:-7.95}; // area Jawa
+const W=720,H=360,PAD=36;
+const px=(lat,lng)=>[PAD+(lng-B.lng0)/(B.lng1-B.lng0)*(W-2*PAD), PAD+(lat-B.lat0)/(B.lat1-B.lat0)*(H-2*PAD)];
+const lerp=(a,b,t)=>a+(b-a)*t;
+let current=null, timer=null, lastUpdate=Date.now();
+
+function chips(){ $("chips").innerHTML=Object.keys(DATA).map(k=>`<button class="chip" type="button" data-k="${k}">${k}</button>`).join(""); }
+
+function track(no){
+  no=no.trim().toUpperCase();
+  const d=DATA[no];
+  if(!d){ $("err").textContent=`Nomor ${no||"(kosong)"} tidak ditemukan. Periksa kembali nomor DO / resi Anda, atau coba salah satu contoh di atas.`; $("err").hidden=false; return; }
+  $("err").hidden=true; current={no,d}; $("doInput").value=no;
+  renderStatus(); renderCourier(); renderTimeline(); renderMap();
+  clearInterval(timer);
+  if(d.live){ timer=setInterval(tick,3000); }
+}
+
+function vehiclePos(d){
+  const pts=d.route.map(k=>LOC[k]);
+  if(d.dest){ const from=pts[pts.length-1]; return {lat:lerp(from.lat,d.dest.lat,d.progress),lng:lerp(from.lng,d.dest.lng,d.progress)}; }
+  const at=pts[Math.min(d.legDone,pts.length-1)]; return {lat:at.lat,lng:at.lng};
+}
+function positionText(d){
+  const pts=d.route.map(k=>LOC[k]);
+  if(d.stage===4) return `Barang sudah diterima di <b>${esc(d.receiver.split("–")[1]||d.receiver)}</b>`;
+  if(d.stage===3){ const p=vehiclePos(d); const km=(Math.hypot(d.dest.lat-p.lat,(d.dest.lng-p.lng)*Math.cos(p.lat*Math.PI/180))*111).toFixed(1);
+    return `Kendaraan di sekitar <span class="mono">${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</span> · <b>± ${km} km</b> lagi ke penerima`; }
+  const at=pts[Math.min(d.legDone,pts.length-1)];
+  return `Barang berada di <b>${esc(at.name)}</b> <span class="mono">(${at.code})</span>, ${esc(at.city)}`;
+}
+
+function renderStatus(){
+  const d=current.d;
+  $("statusPanel").innerHTML=`
+    <div class="status-head">
+      <div><div class="do-no">${current.no}</div><div class="status-title">${esc(d.title)}</div>
+      <p class="status-sub">Estimasi tiba: <b>${esc(d.eta)}</b></p></div>
+      <span class="pill ${d.pill[1]}">${d.pill[0]}</span>
+    </div>
+    <div class="steps">${STEPS.map((s,i)=>`<div class="step ${i<d.stage?"on":""} ${i===d.stage?"cur":""} ${i===d.stage&&d.stage===4?"on":""}"><i>${i<d.stage||d.stage===4?"✓":i+1}</i>${s}</div>`).join("")}</div>
+    <div class="facts">
+      <div class="fact"><span>Pengirim</span><b>${esc(d.sender)}</b></div>
+      <div class="fact"><span>Penerima</span><b>${esc(d.receiver)}</b></div>
+      <div class="fact"><span>Isi barang</span><b>${esc(d.item)}</b></div>
+      <div class="fact"><span>Berat · Layanan</span><b>${esc(d.weight)} · ${esc(d.service)}</b></div>
+      ${d.receivedBy?`<div class="fact"><span>Diterima oleh</span><b>${esc(d.receivedBy)}</b></div>`:""}
+    </div>`;
+}
+
+function personBlock(c,label){
+  const ini=c.name.split(" ").map(w=>w[0]).slice(0,2).join("");
+  const plate=c.plate.split(" ");
+  return `<h2>${label}</h2>
+    <div class="courier"><div class="avatar" aria-hidden="true">${ini}</div>
+      <div><h3>${esc(c.name)}</h3><p>ID ${esc(c.id)} · ${esc(c.hub)}</p></div></div>
+    <dl class="kv">
+      <dt>No. HP</dt><dd class="phone"><span class="mono" id="ph">${esc(c.phone)}</span><button class="copy" type="button" id="copyPh">Salin</button></dd>
+      <dt>Bergabung</dt><dd>${esc(c.join)}</dd>
+      <dt>Jenis kendaraan</dt><dd>${esc(c.vehicle)}</dd>
+      <dt>No. kendaraan</dt><dd class="mono">${esc(c.fleet)}</dd>
+      ${c.note?`<dt>Jadwal</dt><dd>${esc(c.note)}</dd>`:""}
+    </dl>
+    <div class="vehicle-row"><span class="plate" aria-label="Plat nomor ${esc(c.plate)}">${plate.map(esc).join(" ")}<small>${esc(c.exp)}</small></span>
+      <span class="empty">Plat nomor kendaraan</span></div>`;
+}
+
+function renderCourier(){
+  const d=current.d, el=$("courierPanel");
+  if(d.courier) el.innerHTML=personBlock(d.courier, d.stage===4?"Kurir yang Mengantar":"Kurir & Kendaraan");
+  else if(d.linehaul) el.innerHTML=personBlock(d.linehaul,"Pengemudi Linehaul (antar HUB)");
+  else el.innerHTML=`<h2>Kurir & Kendaraan</h2><p class="empty">Kurir belum ditugaskan. Data kurir, kendaraan, dan plat nomor akan muncul setelah barang diangkut dari gudang.</p>`;
+  const b=$("copyPh");
+  if(b) b.onclick=()=>{ const t=$("ph").textContent;
+    const done=()=>{b.textContent="Tersalin";setTimeout(()=>b.textContent="Salin",1500)};
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(done).catch(()=>{const r=document.createRange();r.selectNodeContents($("ph"));const s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent="Tekan Ctrl+C";}); };
+}
+
+function renderTimeline(){
+  $("timeline").innerHTML=current.d.events.map(e=>`<li><time>${e[0].replace(" ","<br>")}</time><span class="bul"></span><div><strong>${esc(e[1])}</strong><span class="loc">${esc(e[2])}</span></div></li>`).join("");
+}
+
+function renderMap(){
+  const d=current.d, svg=$("map");
+  let g="";
+  // grid
+  for(let lng=107;lng<=113;lng++){const [x]=px(-6,lng);g+=`<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--grid)"/><text x="${x+3}" y="${H-6}" font-size="9" fill="var(--muted)" font-family="JetBrains Mono,monospace">${lng}°BT</text>`;}
+  for(let lat=-6;lat>=-7.5;lat-=.5){const [,y]=px(lat,107);g+=`<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="var(--grid)"/><text x="4" y="${y-3}" font-size="9" fill="var(--muted)" font-family="JetBrains Mono,monospace">${Math.abs(lat)}°LS</text>`;}
+  // all hubs faint
+  Object.values(LOC).forEach(l=>{const[x,y]=px(l.lat,l.lng);g+=`<circle cx="${x}" cy="${y}" r="3" fill="var(--muted)" opacity=".35"/>`;});
+  const pts=d.route.map(k=>LOC[k]);
+  const all=[...pts]; if(d.dest) all.push(d.dest);
+  for(let i=0;i<all.length-1;i++){
+    const [x1,y1]=px(all[i].lat,all[i].lng),[x2,y2]=px(all[i+1].lat,all[i+1].lng);
+    const done=i<d.legDone && i<pts.length-1;
+    g+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${done?"var(--route)":"var(--muted)"}" stroke-width="${done?4:2}" ${done?"":'stroke-dasharray="6 5" opacity=".6"'} stroke-linecap="round"/>`;
+  }
+  if(d.dest && d.progress>0){const v=vehiclePos(d);const[a,b]=px(pts[pts.length-1].lat,pts[pts.length-1].lng),[c,e]=px(v.lat,v.lng);g+=`<line x1="${a}" y1="${b}" x2="${c}" y2="${e}" stroke="var(--route)" stroke-width="4" stroke-linecap="round"/>`;}
+  all.forEach((l,i)=>{const[x,y]=px(l.lat,l.lng);const isDest=d.dest&&i===all.length-1;
+    g+=`<circle cx="${x}" cy="${y}" r="${isDest?6:7}" fill="var(--surface)" stroke="${isDest?"var(--ink)":"var(--route)"}" stroke-width="3"/>`;
+    const lbl=l.code||"Penerima"; const below=i%2===1;
+    g+=`<text x="${x}" y="${below?y+22:y-13}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)" font-family="JetBrains Mono,monospace">${lbl}</text>`;});
+  const v=vehiclePos(d);const[vx,vy]=px(v.lat,v.lng);
+  g+=`<circle id="vh" cx="${vx}" cy="${vy}" r="13" fill="var(--accent)" opacity=".22"/><circle cx="${vx}" cy="${vy}" r="7" fill="var(--accent)" stroke="var(--surface)" stroke-width="2.5"/>`;
+  svg.innerHTML=g;
+  $("posLine").innerHTML=`<span>📍 ${positionText(d)}</span><span class="empty" id="upd">Diperbarui ${new Date(lastUpdate).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit",second:"2-digit"})} WIB</span>`;
+}
+
+function tick(){
+  const d=current.d; if(!d.live) return;
+  d.progress=Math.min(.97,d.progress+.03); lastUpdate=Date.now(); renderMap();
+}
+
+$("f").addEventListener("submit",e=>{e.preventDefault();track($("doInput").value);});
+$("chips").addEventListener("click",e=>{const k=e.target.dataset&&e.target.dataset.k;if(k)track(k);});
+setInterval(()=>{$("clock").textContent="Live · "+new Date().toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})+" WIB";},1000);
+chips(); track("DO-2610-00187");
+</script>
+
+</body>
+</html>
